@@ -14,30 +14,34 @@ import statsmodels.api as sm
 import numpy as np
 import os
 
+
+try:
+    arquivo_csv = 'vendas.csv'
+    print("Carregando arquivo de dados 'vendas.csv' para a memória...")
+    df_global = pd.read_csv(arquivo_csv, delimiter=';')
+    df_global['DATA'] = pd.to_datetime(df_global['ANO'].astype(str) + '-' + df_global['MES'].astype(str) + '-01')
+    df_global = df_global.set_index('DATA')
+    print("Arquivo de dados carregado com sucesso.")
+except FileNotFoundError:
+    print(f"ERRO CRÍTICO: Arquivo '{arquivo_csv}' não encontrado no momento da inicialização.")
+    df_global = None
+
 def analisar_e_prever_vendas(loja_desejada, mes_desejado, ano_desejado):
     """
-    Função-núcleo que executa a previsão e retorna os resultados como um dicionário.
-    Esta é a nossa "biblioteca" de previsão.
+    Função-núcleo que agora USA os dados já carregados na memória.
     """
-    arquivo_csv = 'vendas.csv'
-    if not os.path.exists(arquivo_csv):
-        return {"erro": f"Arquivo '{arquivo_csv}' não encontrado."}
+    if df_global is None:
+        return {"erro": f"Os dados de vendas não puderam ser carregados. Verifique se 'vendas.csv' existe."}
 
-    df = pd.read_csv(arquivo_csv, delimiter=';')
-    df['DATA'] = pd.to_datetime(df['ANO'].astype(str) + '-' + df['MES'].astype(str) + '-01')
-    df = df.set_index('DATA')
-    df_loja = df[df['LOJNUMERO'] == loja_desejada].copy().sort_index()
+    df_loja = df_global[df_global['LOJNUMERO'] == loja_desejada].copy().sort_index()
 
     if df_loja.empty:
         return {"erro": f"Loja {loja_desejada} não encontrada."}
 
-    # Remove o último mês para evitar dados parciais
     df_loja_treino = df_loja.iloc[:-1]
-
     if len(df_loja_treino) < 12:
-        return {"erro": "Dados insuficientes para um treinamento confiável após remoção do último mês."}
+        return {"erro": "Dados insuficientes para um treinamento confiável."}
 
-    # Lógica de previsão
     df_loja_treino['QUANTIDADE_LOG'] = np.log1p(df_loja_treino['QUANTIDADE'])
     df_loja_treino['SOMA_LOG'] = np.log1p(df_loja_treino['SOMA'])
 
@@ -54,11 +58,9 @@ def analisar_e_prever_vendas(loja_desejada, mes_desejado, ano_desejado):
     valor_previsto_qtd = round(np.expm1(pred_qtd_log.predicted_mean.iloc[0]))
     valor_previsto_soma = round(np.expm1(pred_soma_log.predicted_mean.iloc[0]), 2)
 
-    # Garantia de resultados positivos
     valor_previsto_qtd = max(0, valor_previsto_qtd)
     valor_previsto_soma = max(0, valor_previsto_soma)
 
-    # Retorna um dicionário com os resultados
     return {
         "loja_consultada": loja_desejada,
         "previsao_para_data": f"{mes_desejado:02d}/{ano_desejado}",
