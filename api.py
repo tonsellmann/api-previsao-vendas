@@ -1,4 +1,4 @@
-# api.py (Versão Final e Simples)
+# api.py
 
 from flask import Flask, request, jsonify
 import pandas as pd
@@ -10,6 +10,7 @@ app = Flask(__name__)
 
 @app.route('/prever', methods=['GET'])
 def prever():
+    # ... (código do endpoint /prever, exatamente como na nossa última versão)
     pasta_modelos = 'modelos_salvos'
     try:
         loja = int(request.args.get('loja'))
@@ -21,7 +22,7 @@ def prever():
     caminho_modelo = f'{pasta_modelos}/modelo_loja_{loja}_soma.pkl'
 
     if not os.path.exists(caminho_modelo):
-        return jsonify({"erro": f"Modelo para a Loja {loja} não encontrado. Verifique o status do treino no endpoint /status."}), 404
+        return jsonify({"erro": f"Modelo para a Loja {loja} não encontrado. Verifique o status do treino."}), 404
 
     try:
         with open(caminho_modelo, 'rb') as pkl:
@@ -42,18 +43,14 @@ def prever():
 
 @app.route('/status', methods=['GET'])
 def status():
-    """Endpoint de diagnóstico para verificar o resultado do treino."""
+    # ... (código do endpoint /status, exatamente como na nossa última versão)
     pasta_modelos = 'modelos_salvos'
     status_treino = "FALHOU"
-    detalhes = "A pasta 'modelos_salvos' não foi encontrada."
+    detalhes = "A pasta 'modelos_salvos' ou o ficheiro de sucesso não foram encontrados."
     
     if os.path.exists(os.path.join(pasta_modelos, '_SUCESSO.txt')):
         status_treino = "SUCESSO"
-        try:
-            with open(os.path.join(pasta_modelos, '_SUCESSO.txt'), 'r') as f:
-                detalhes = f.read()
-        except Exception:
-            detalhes = "Ficheiro de sucesso encontrado, mas não pôde ser lido."
+        detalhes = "O script de treino foi executado com sucesso durante a publicação."
 
     return jsonify({
         "status_do_treino_na_publicacao": status_treino,
