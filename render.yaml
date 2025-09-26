@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: api-previsao-vendas
-    env: python
-    plan: free
-    buildCommand: "./build.sh"
-    startCommand: "gunicorn app:app"
