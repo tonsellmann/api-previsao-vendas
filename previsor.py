@@ -12,59 +12,91 @@ Original file is located at
 import pandas as pd
 import statsmodels.api as sm
 import numpy as np
+import pickle
 import os
+import shutil
 
+# Variável global para comunicar o status do treino para a API
+TREINO_EM_ANDAMENTO = False
 
-try:
-    arquivo_csv = 'vendas.csv'
-    print("Carregando arquivo de dados 'vendas.csv' para a memória...")
-    df_global = pd.read_csv(arquivo_csv, delimiter=';')
-    df_global['DATA'] = pd.to_datetime(df_global['ANO'].astype(str) + '-' + df_global['MES'].astype(str) + '-01')
-    df_global = df_global.set_index('DATA')
-    print("Arquivo de dados carregado com sucesso.")
-except FileNotFoundError:
-    print(f"ERRO CRÍTICO: Arquivo '{arquivo_csv}' não encontrado no momento da inicialização.")
-    df_global = None
-
-def analisar_e_prever_vendas(loja_desejada, mes_desejado, ano_desejado):
+def treinar_modelos_de_arquivo(caminho_do_arquivo):
     """
-    Função-núcleo que agora USA os dados já carregados na memória.
+    Função de treino pesada. Será executada em segundo plano.
+    Lê o CSV, treina todos os modelos e salva-os.
     """
-    if df_global is None:
-        return {"erro": f"Os dados de vendas não puderam ser carregados. Verifique se 'vendas.csv' existe."}
-
-    df_loja = df_global[df_global['LOJNUMERO'] == loja_desejada].copy().sort_index()
-
-    if df_loja.empty:
-        return {"erro": f"Loja {loja_desejada} não encontrada."}
-
-    df_loja_treino = df_loja.iloc[:-1]
-    if len(df_loja_treino) < 12:
-        return {"erro": "Dados insuficientes para um treinamento confiável."}
-
-    df_loja_treino['QUANTIDADE_LOG'] = np.log1p(df_loja_treino['QUANTIDADE'])
-    df_loja_treino['SOMA_LOG'] = np.log1p(df_loja_treino['SOMA'])
+    global TREINO_EM_ANDAMENTO
+    TREINO_EM_ANDAMENTO = True
+    
+    pasta_modelos = 'modelos_salvos'
+    
+    # Limpa modelos antigos para garantir que usamos os novos
+    if os.path.exists(pasta_modelos):
+        shutil.rmtree(pasta_modelos)
+    os.makedirs(pasta_modelos)
 
     try:
-        modelo_quantidade = sm.tsa.SARIMAX(df_loja_treino['QUANTIDADE_LOG'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12)).fit(disp=False)
-        modelo_soma = sm.tsa.SARIMAX(df_loja_treino['SOMA_LOG'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12)).fit(disp=False)
+        print(f"A carregar dados de '{caminho_do_arquivo}'...")
+        df = pd.read_csv(caminho_do_arquivo, delimiter=';')
+        df['DATA'] = pd.to_datetime(df['ANO'].astype(str) + '-' + df['MES'].astype(str) + '-01')
+        df = df.set_index('DATA')
+        
+        lojas_unicas = df['LOJNUMERO'].unique()
+        print(f"Encontradas {len(lojas_unicas)} lojas. A iniciar treino em segundo plano...")
+
+        for loja_id in lojas_unicas:
+            df_loja = df[df['LOJNUMERO'] == loja_id].copy().sort_index()
+            if len(df_loja) < 12:
+                continue
+
+            df_loja['QUANTIDADE_LOG'] = np.log1p(df_loja['QUANTIDADE'])
+            df_loja['SOMA_LOG'] = np.log1p(df_loja['SOMA'])
+
+            modelo_qtd = sm.tsa.SARIMAX(df_loja['QUANTIDADE_LOG'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12)).fit(disp=False)
+            with open(f'{pasta_modelos}/modelo_loja_{loja_id}_qtd.pkl', 'wb') as pkl:
+                pickle.dump(modelo_qtd, pkl)
+
+            modelo_soma = sm.tsa.SARIMAX(df_loja['SOMA_LOG'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12)).fit(disp=False)
+            with open(f'{pasta_modelos}/modelo_loja_{loja_id}_soma.pkl', 'wb') as pkl:
+                pickle.dump(modelo_soma, pkl)
+        
+        print("Processo de treino em segundo plano concluído com sucesso!")
+
     except Exception as e:
-        return {"erro": f"Falha ao treinar o modelo: {e}"}
+        print(f"ERRO CRÍTICO DURANTE O TREINO: {e}")
+    finally:
+        # Independentemente do que aconteça, informa a API que o treino terminou
+        TREINO_EM_ANDAMENTO = False
 
-    data_previsao = pd.to_datetime(f'{ano_desejado}-{mes_desejado}-01')
-    pred_qtd_log = modelo_quantidade.get_prediction(start=data_previsao, end=data_previsao)
-    pred_soma_log = modelo_soma.get_prediction(start=data_previsao, end=data_previsao)
+def obter_previsao(loja_desejada, mes_desejado, ano_desejado):
+    """
+    Função de previsão rápida. Apenas carrega modelos prontos.
+    """
+    pasta_modelos = 'modelos_salvos'
+    caminho_modelo_qtd = f'{pasta_modelos}/modelo_loja_{loja_desejada}_qtd.pkl'
+    caminho_modelo_soma = f'{pasta_modelos}/modelo_loja_{loja_desejada}_soma.pkl'
 
-    valor_previsto_qtd = round(np.expm1(pred_qtd_log.predicted_mean.iloc[0]))
-    valor_previsto_soma = round(np.expm1(pred_soma_log.predicted_mean.iloc[0]), 2)
+    if not os.path.exists(caminho_modelo_qtd) or not os.path.exists(caminho_modelo_soma):
+        return {"erro": f"Modelos para a Loja {loja_desejada} ainda não foram treinados ou o treino falhou. Por favor, use o endpoint /treinar primeiro."}
 
-    valor_previsto_qtd = max(0, valor_previsto_qtd)
-    valor_previsto_soma = max(0, valor_previsto_soma)
+    try:
+        with open(caminho_modelo_qtd, 'rb') as pkl:
+            modelo_qtd = pickle.load(pkl)
+        with open(caminho_modelo_soma, 'rb') as pkl:
+            modelo_soma = pickle.load(pkl)
 
-    return {
-        "loja_consultada": loja_desejada,
-        "previsao_para_data": f"{mes_desejado:02d}/{ano_desejado}",
-        "previsao_quantidade": int(valor_previsto_qtd),
-        "previsao_valor_vendas": float(valor_previsto_soma),
-        "status": "sucesso"
-    }
+        data_previsao = pd.to_datetime(f'{ano_desejado}-{mes_desejado}-01')
+        pred_qtd_log = modelo_qtd.get_prediction(start=data_previsao, end=data_previsao)
+        pred_soma_log = modelo_soma.get_prediction(start=data_previsao, end=data_previsao)
+
+        valor_previsto_qtd = round(np.expm1(pred_qtd_log.predicted_mean.iloc[0]))
+        valor_previsto_soma = round(np.expm1(pred_soma_log.predicted_mean.iloc[0]), 2)
+        
+        return {
+            "loja_consultada": loja_desejada,
+            "previsao_para_data": f"{mes_desejado:02d}/{ano_desejado}",
+            "previsao_quantidade": int(max(0, valor_previsto_qtd)),
+            "previsao_valor_vendas": float(max(0, valor_previsto_soma)),
+            "status": "sucesso"
+        }
+    except Exception as e:
+        return {"erro": f"Ocorreu um erro ao gerar a previsão: {e}"}
