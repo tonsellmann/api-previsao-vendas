@@ -1,43 +1,39 @@
 # api.py
 
 from flask import Flask, request, jsonify
-from previsor import obter_previsao
 import os
+from redis import Redis
+from rq import Queue
+from tasks import treinar_modelos_de_arquivo
 
 app = Flask(__name__)
+PASTA_UPLOADS = 'uploads'
+os.makedirs(PASTA_UPLOADS, exist_ok=True)
 
-@app.route('/prever', methods=['GET'])
-def prever():
-    try:
-        loja = int(request.args.get('loja'))
-        mes = int(request.args.get('mes'))
-        ano = int(request.args.get('ano'))
-    except (TypeError, ValueError):
-        return jsonify({"erro": "Parâmetros inválidos."}), 400
-    
-    resultado = obter_previsao(loja, mes, ano)
-    return jsonify(resultado)
+# Conecta-se à fila de tarefas (o Render irá fornecer este URL)
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+conn = Redis.from_url(redis_url)
+q = Queue(connection=conn)
 
-@app.route('/status', methods=['GET'])
-def status():
-    """
-    Endpoint de diagnóstico para verificar o resultado do treino.
-    """
-    pasta_modelos = 'modelos_salvos'
-    status_treino = "FALHOU"
-    arquivos_modelo = []
+@app.route('/treinar', methods=['POST'])
+def treinar():
+    if 'file' not in request.files:
+        return jsonify({"erro": "Nenhum arquivo enviado."}), 400
 
-    if os.path.exists(os.path.join(pasta_modelos, '_SUCESSO.txt')):
-        status_treino = "SUCESSO"
-    
-    if os.path.exists(pasta_modelos):
-        arquivos_modelo = os.listdir(pasta_modelos)
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        return jsonify({"erro": "Formato de arquivo inválido. Por favor, envie um .csv"}), 400
 
-    return jsonify({
-        "status_do_treino_automatico": status_treino,
-        "numero_de_modelos_gerados": len(arquivos_modelo),
-        "modelos_gerados": arquivos_modelo
-    })
+    caminho_arquivo = os.path.join(PASTA_UPLOADS, file.filename)
+    file.save(caminho_arquivo)
+
+    # Adiciona a tarefa de treino à fila para ser executada pelo worker
+    q.enqueue(treinar_modelos_de_arquivo, caminho_arquivo)
+
+    return jsonify({"mensagem": "Arquivo recebido. O treino foi iniciado em segundo plano."}), 202
+
+# Os outros endpoints (prever, status) podem ser adicionados aqui
+# Mas vamos focar em fazer o treino funcionar primeiro.
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
