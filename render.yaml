@@ -2,6 +2,6 @@ services:
   - type: web
     name: api-previsao-vendas
     env: python
-    plan: free # Otimizado para o plano gratuito
-    buildCommand: "pip install -r requirements.txt && python treinar_modelos.py"
+    plan: free
+    buildCommand: "./build.sh"
     startCommand: "gunicorn api:app"
