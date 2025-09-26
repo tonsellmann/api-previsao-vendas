@@ -1,4 +1,4 @@
-# api.py
+# api.py (Versão Corrigida - Sem Importação Circular)
 
 from flask import Flask, request, jsonify
 import threading
@@ -9,13 +9,22 @@ app = Flask(__name__)
 PASTA_UPLOADS = 'uploads'
 os.makedirs(PASTA_UPLOADS, exist_ok=True)
 
-# Variável global para controlar o status do treino
+# A variável de estado vive apenas aqui, no ficheiro principal da API.
 TREINO_EM_ANDAMENTO = False
 
-def set_training_status(status):
-    """Função para alterar o status do treino de forma segura."""
+def wrapper_de_treino(caminho_arquivo):
+    """
+    Função "embrulho" que executa o treino e atualiza o estado da API
+    quando este termina.
+    """
     global TREINO_EM_ANDAMENTO
-    TREINO_EM_ANDAMENTO = status
+    try:
+        # Chama a função de treino do outro ficheiro
+        treinar_modelos_de_arquivo(caminho_arquivo)
+    finally:
+        # Aconteça o que acontecer (sucesso ou erro), diz à API que o treino terminou.
+        TREINO_EM_ANDAMENTO = False
+
 
 @app.route('/treinar', methods=['POST'])
 def treinar():
@@ -34,8 +43,9 @@ def treinar():
     file.save(caminho_arquivo)
 
     # Inicia o treino em segundo plano e atualiza o status
-    set_training_status(True)
-    thread_de_treino = threading.Thread(target=treinar_modelos_de_arquivo, args=(caminho_arquivo,))
+    TREINO_EM_ANDAMENTO = True
+    # A thread agora chama a nossa função "embrulho"
+    thread_de_treino = threading.Thread(target=wrapper_de_treino, args=(caminho_arquivo,))
     thread_de_treino.start()
 
     return jsonify({"mensagem": "Arquivo recebido. O treino foi iniciado em segundo plano."}), 202
@@ -43,7 +53,7 @@ def treinar():
 @app.route('/prever', methods=['GET'])
 def prever():
     if TREINO_EM_ANDAMENTO:
-        return jsonify({"erro": "A API está ocupada a treinar novos modelos. Por favor, tente novamente em alguns minutos."}), 503
+        return jsonify({"erro": "A API está ocupada a treinar. Tente novamente em alguns minutos."}), 503
 
     try:
         loja = int(request.args.get('loja'))
@@ -57,20 +67,11 @@ def prever():
 
 @app.route('/status', methods=['GET'])
 def status():
-    pasta_modelos = 'modelos_salvos'
     status_final = "inativo_ou_concluido"
-    
     if TREINO_EM_ANDAMENTO:
         status_final = "em_andamento"
-    
-    modelos_gerados = []
-    if os.path.exists(pasta_modelos):
-        modelos_gerados = os.listdir(pasta_modelos)
+    return jsonify({"status_treino_atual": status_final})
 
-    return jsonify({
-        "status_treino_atual": status_final,
-        "modelos_na_memoria": modelos_gerados
-    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
