@@ -2,14 +2,5 @@ services:
   - type: web
     name: api-previsao-vendas
     env: python
-    buildCommand: |
-      echo "PASSO 1: A instalar bibliotecas..."
-      pip install -r requirements.txt
-      echo "PASSO 2: A verificar ficheiros no diretório..."
-      ls -l
-      echo "PASSO 3: A iniciar o treino dos modelos..."
-      python treinar_modelos.py
-      echo "PASSO 4: A verificar se a pasta 'modelos_salvos' foi criada..."
-      ls -l modelos_salvos
-      echo "PASSO 5: Treino concluído."
-    startCommand: "gunicorn --timeout 180 api:app"
+    buildCommand: "pip install -r requirements.txt && python treinar_modelos.py"
+    startCommand: "gunicorn api:app"
