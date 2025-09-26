@@ -4,4 +4,4 @@ services:
     env: python
     plan: free
     buildCommand: "./build.sh"
-    startCommand: "gunicorn api:app"
+    startCommand: "gunicorn app:app"
