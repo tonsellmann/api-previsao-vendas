@@ -4,5 +4,3 @@ pandas
 statsmodels
 numpy
 scikit-learn
-redis
-rq
