@@ -2,5 +2,5 @@ services:
   - type: web
     name: api-previsao-vendas
     env: python
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && python treinar_modelos.py"
     startCommand: "gunicorn --timeout 180 api:app"
