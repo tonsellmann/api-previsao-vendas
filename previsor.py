@@ -1,4 +1,4 @@
-# previsor.py (Versão Corrigida - Sem Importação Circular)
+# tasks.py (ou previsor.py, se for o caso)
 
 import pandas as pd
 import statsmodels.api as sm
@@ -7,9 +7,11 @@ import pickle
 import os
 import shutil
 
+# ... (o resto do código é o mesmo até à função de treino) ...
+
 def treinar_modelos_de_arquivo(caminho_do_arquivo):
     """
-    Função de treino pesada. Não sabe nada sobre a API, apenas executa a tarefa.
+    Função de treino pesada. Corrigida para tratar o ID da loja como inteiro.
     """
     pasta_modelos = 'modelos_salvos'
     print(f"WORKER: A iniciar treino a partir do ficheiro {caminho_do_arquivo}...")
@@ -19,17 +21,20 @@ def treinar_modelos_de_arquivo(caminho_do_arquivo):
     os.makedirs(pasta_modelos)
 
     try:
-        # A lógica de treino otimizada para baixa memória permanece a mesma
-        lojas_unicas = pd.read_csv(caminho_do_arquivo, delimiter=';', usecols=['LOJNUMERO'])['LOJNUMERO'].unique()
-        print(f"WORKER: Encontradas {len(lojas_unicas)} lojas.")
+        # --- CORREÇÃO APLICADA AQUI ---
+        # Forçamos a coluna LOJNUMERO a ser lida como um número inteiro.
+        lojas_unicas = pd.read_csv(caminho_do_arquivo, delimiter=';', usecols=['LOJNUMERO'], dtype={'LOJNUMERO': int})['LOJNUMERO'].unique()
+        print(f"WORKER: Encontradas {len(lojas_unicas)} lojas. A iniciar treino sequencial...")
 
+        lojas_treinadas = 0
         for loja_id in lojas_unicas:
-            # ... (a lógica interna de treino para cada loja é a mesma de antes)
             try:
-                df_loja = pd.read_csv(caminho_do_arquivo, delimiter=';')
+                # --- CORREÇÃO APLICADA AQUI TAMBÉM ---
+                df_loja = pd.read_csv(caminho_do_arquivo, delimiter=';', dtype={'LOJNUMERO': int})
                 df_loja = df_loja[df_loja['LOJNUMERO'] == loja_id].copy()
 
-                if len(df_loja) < 12: continue
+                if len(df_loja) < 12:
+                    continue
 
                 df_loja['DATA'] = pd.to_datetime(df_loja['ANO'].astype(str) + '-' + df_loja['MES'].astype(str) + '-01')
                 df_loja = df_loja.set_index('DATA').sort_index()
@@ -39,38 +44,23 @@ def treinar_modelos_de_arquivo(caminho_do_arquivo):
                 
                 with open(f'{pasta_modelos}/modelo_loja_{loja_id}_soma.pkl', 'wb') as pkl:
                     pickle.dump(modelo_soma, pkl)
+                
+                lojas_treinadas += 1
+            except Exception as e:
+                print(f"WORKER: ERRO ao treinar a Loja {loja_id}: {e}")
             finally:
                 if 'df_loja' in locals(): del df_loja
-
+        
         with open(os.path.join(pasta_modelos, '_SUCESSO.txt'), 'w') as f:
-            f.write('Treino concluído.')
-        print("WORKER: Treino concluído com sucesso.")
+            f.write(f'Treino concluído com sucesso para {lojas_treinadas} lojas.')
+        print(f"WORKER: Treino concluído. {lojas_treinadas} lojas processadas.")
+        return True
 
     except Exception as e:
         print(f"WORKER: ERRO CRÍTICO no processo de treino: {e}")
+        return False
 
-
+# Adicione esta função ao seu previsor.py se estiver a usar a versão com threading
 def obter_previsao(loja_desejada, mes_desejado, ano_desejado):
-    # Esta função não precisa de alterações
-    pasta_modelos = 'modelos_salvos'
-    caminho_modelo_soma = f'{pasta_modelos}/modelo_loja_{loja_desejada}_soma.pkl'
-
-    if not os.path.exists(caminho_modelo_soma):
-        return {"erro": "Modelos para esta loja não foram encontrados."}
-    
-    try:
-        with open(caminho_modelo_soma, 'rb') as pkl:
-            modelo_soma = pickle.load(pkl)
-
-        data_previsao = pd.to_datetime(f'{ano_desejado}-{mes_desejado}-01')
-        pred_soma_log = modelo_soma.get_prediction(start=data_previsao, end=data_previsao)
-        valor_previsto_soma = round(np.expm1(pred_soma_log.predicted_mean.iloc[0]), 2)
-        
-        return {
-            "loja_consultada": loja_desejada,
-            "previsao_para_data": f"{mes_desejado:02d}/{ano_desejado}",
-            "previsao_valor_vendas": float(max(0, valor_previsto_soma)),
-            "status": "sucesso"
-        }
-    except Exception as e:
-        return {"erro": f"Ocorreu um erro ao gerar a previsão: {e}"}
+    # A função de previsão não precisa de alterações
+    # ...
