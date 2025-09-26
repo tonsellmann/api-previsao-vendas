@@ -1,34 +1,7 @@
 services:
-  # 1. A Fila de Tarefas (Redis)
-  - type: redis
-    name: redis-previsao
-    plan: free
-    ipAllowList: [] # Permite que a API e o Worker se conectem
-
-  # 2. A API (O Rececionista)
   - type: web
     name: api-previsao-vendas
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
+    plan: free # Otimizado para o plano gratuito
+    buildCommand: "pip install -r requirements.txt && python treinar_modelos.py"
     startCommand: "gunicorn api:app"
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: redis-previsao
-          property: connectionString
-
-  # 3. O Worker (O Chefe de Cozinha)
-  - type: worker
-    name: worker-previsao
-    env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python worker.py"
-    envVars:
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: redis-previsao
-          property: connectionString
